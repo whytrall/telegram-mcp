@@ -59,12 +59,12 @@ async def test_real_stdio_subprocess_initializes_and_reads_status(tmp_path):
             # Codex launches a separate stdio process for each chat. Both must
             # coexist while only the shared backend owns the native database.
             async with Client(params, read_timeout_seconds=45) as second:
-                assert len((await client.list_tools()).tools) == 12
+                assert len((await client.list_tools()).tools) == 13
                 one, two = await asyncio.gather(
                     client.call_tool("telegram_status"),
                     second.call_tool("telegram_status"),
                 )
-                assert one.structured_content["read_only"] is True
+                assert one.structured_content["read_only"] is False
                 assert two.structured_content["authorized"] is False
             assert (await client.call_tool("telegram_status")).structured_content[
                 "authorized"
@@ -87,8 +87,11 @@ async def test_stdio_server_discovers_tools_without_app_credentials_or_native_li
     try:
         async with Client(params, read_timeout_seconds=45) as client:
             tools = (await client.list_tools()).tools
-            assert len(tools) == 12
-            assert all(tool.annotations.read_only_hint == (tool.name != "logout") for tool in tools)
+            assert len(tools) == 13
+            assert all(
+                tool.annotations.read_only_hint == (tool.name not in {"logout", "send_message"})
+                for tool in tools
+            )
             assert "telegram_login_qr" not in {tool.name for tool in tools}
             status = (await client.call_tool("telegram_status")).structured_content
             assert status["authorized"] is False

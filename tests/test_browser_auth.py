@@ -105,7 +105,7 @@ async def test_first_account_call_collects_app_credentials_qr_password_and_resum
     server, opened, pages, started = fixture_server(config, transport)
     async with Client(server) as client:
         assert not transport.requests  # Credential-less server starts without TDLib.
-        assert len((await client.list_tools()).tools) == 12
+        assert len((await client.list_tools()).tools) == 13
         assert (await client.call_tool("telegram_status")).structured_content["authorized"] is False
         assert not opened  # Diagnostics do not start login.
         pending = asyncio.create_task(client.call_tool("get_me"))

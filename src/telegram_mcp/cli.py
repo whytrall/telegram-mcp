@@ -97,14 +97,14 @@ async def login(config: Config, method: Literal["qr", "phone"] = "qr") -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Read-only Telegram MCP server backed by TDLib.")
+    parser = argparse.ArgumentParser(description="Telegram MCP server backed by TDLib.")
     parser.add_argument(
         "--env-file",
         type=Path,
         help="Load configuration from this explicit .env file; existing environment values win.",
     )
     commands = parser.add_subparsers(dest="command")
-    commands.add_parser("serve", help="Run the read-only stdio MCP server (default).")
+    commands.add_parser("serve", help="Run the stdio MCP server (default).")
     commands.add_parser("serve-backend", help="Run the shared local Telegram backend.")
     commands.add_parser("stop", help="Stop the shared Telegram backend.")
     login_parser = commands.add_parser("login", help="Log in from the terminal using a QR code.")
@@ -159,7 +159,8 @@ def main() -> None:
                         "session_database_present": (
                             config.data_dir / "database" / "td.binlog"
                         ).exists(),
-                        "read_only": True,
+                        "read_only": False,
+                        "sending_requires_confirmation": True,
                     },
                     indent=2,
                 )

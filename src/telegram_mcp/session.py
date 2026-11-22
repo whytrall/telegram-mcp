@@ -47,6 +47,10 @@ class TelegramSession:
         )
 
     @property
+    def has_pending_sends(self) -> bool:
+        return self._client is not None and self._client.has_pending_sends
+
+    @property
     def authorization_state(self) -> dict[str, Any]:
         if self._logging_out:
             return {"@type": "authorizationStateLoggingOut"}

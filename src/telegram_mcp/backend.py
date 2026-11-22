@@ -150,9 +150,10 @@ def stop_backend(config: Config) -> bool:
 
 
 class IdleShutdown:
-    def __init__(self, timeout: float, shutdown):
+    def __init__(self, timeout: float, shutdown, is_busy=lambda: False):
         self.timeout = timeout
         self.shutdown = shutdown
+        self.is_busy = is_busy
         self.active = 0
         self.stopping = False
         self._timer: asyncio.TimerHandle | None = None
@@ -165,7 +166,13 @@ class IdleShutdown:
     def arm(self):
         self.cancel()
         if self.timeout and not self.active and not self.stopping:
-            self._timer = asyncio.get_running_loop().call_later(self.timeout, self.stop)
+            self._timer = asyncio.get_running_loop().call_later(self.timeout, self.expire)
+
+    def expire(self):
+        if self.is_busy():
+            self.arm()
+        else:
+            self.stop()
 
     def stop(self):
         self.stopping = True
@@ -225,7 +232,11 @@ class PrivateBackend:
 
 
 def backend_app(server, token: str, shutdown, *, idle_timeout: float = 300):
-    idle = IdleShutdown(idle_timeout, shutdown)
+    idle = IdleShutdown(
+        idle_timeout,
+        shutdown,
+        lambda: server.telegram_session is not None and server.telegram_session.has_pending_sends,
+    )
 
     @server.custom_route("/health", methods=["GET"])
     async def health(request):

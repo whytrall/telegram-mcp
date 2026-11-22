@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import threading
 import uuid
+from collections import deque
 from typing import Any
 
 from filelock import FileLock, Timeout
@@ -27,6 +28,8 @@ class TDLibClient:
         self.config = config
         self._transport = transport
         self._pending: dict[str, asyncio.Future] = {}
+        self._sending: set[tuple[int, int]] = set()
+        self._settled_sends: deque[tuple[int, int]] = deque(maxlen=1024)
         self._auth: dict[str, Any] = {"@type": "starting"}
         self._auth_changed = asyncio.Condition()
         self._initialized = asyncio.Event()
@@ -45,6 +48,10 @@ class TDLibClient:
     @property
     def ready(self) -> bool:
         return self._auth["@type"] == "authorizationStateReady" and not self._closing
+
+    @property
+    def has_pending_sends(self) -> bool:
+        return bool(self._sending)
 
     async def __aenter__(self) -> TDLibClient:
         await self.start()
@@ -96,6 +103,7 @@ class TDLibClient:
 
     def _fail(self, error: Exception) -> None:
         self._failure = error
+        self._sending.clear()
         self._initialized.set()
         for future in self._pending.values():
             if not future.done():
@@ -111,6 +119,30 @@ class TDLibClient:
             else:
                 future.set_result(event)
         event_type = event.get("@type")
+        if event_type in {"updateMessageSendSucceeded", "updateMessageSendFailed"}:
+            message = event["message"]
+            key = (message["chat_id"], event["old_message_id"])
+            self._sending.discard(key)
+            self._settled_sends.append(key)
+        elif event_type in {"message", "messages", "updateNewMessage"}:
+            messages = (
+                event.get("messages", [])
+                if event_type == "messages"
+                else [event["message"]]
+                if event_type == "updateNewMessage"
+                else [event]
+            )
+            for message in messages:
+                state = (message.get("sending_state") or {}) if message else {}
+                if state.get("@type") == "messageSendingStatePending":
+                    key = (message["chat_id"], message["id"])
+                    if key not in self._settled_sends:
+                        self._sending.add(key)
+        elif event_type == "updateDeleteMessages":
+            for message_id in event["message_ids"]:
+                key = (event["chat_id"], message_id)
+                self._sending.discard(key)
+                self._settled_sends.append(key)
         if event_type == "updateAuthorizationState":
             self._on_auth(event["authorization_state"])
 

@@ -53,8 +53,11 @@ async def test_http_clients_share_one_tdlib_session_and_logout(config):
                     assert len(created) == 1
                     assert not transport.released
                     tools = (await second.list_tools()).tools
-                    assert len(tools) == 12
-                    assert all(t.annotations.read_only_hint == (t.name != "logout") for t in tools)
+                    assert len(tools) == 13
+                    assert all(
+                        t.annotations.read_only_hint == (t.name not in {"logout", "send_message"})
+                        for t in tools
+                    )
                     result = await second.call_tool("logout")
                     assert result.structured_content == {"logged_out": True, "authorized": False}
                     assert transport.released

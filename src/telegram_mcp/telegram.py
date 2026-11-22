@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+import os
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from .client import TDLibClient, TDLibError
 
@@ -27,6 +31,61 @@ READ_METHODS = frozenset(
         "getForumTopicHistory",
     }
 )
+
+
+class Attachment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["photo", "video", "file"]
+    path: str = Field(min_length=1, description="Absolute local path readable by the MCP server.")
+    width: int = Field(default=0, ge=0, description="Photo/video width; 0 if unknown.")
+    height: int = Field(default=0, ge=0, description="Photo/video height; 0 if unknown.")
+    duration: int = Field(default=0, ge=0, description="Video duration in seconds; 0 if unknown.")
+
+    def content(self, caption: str) -> dict:
+        path = Path(self.path).expanduser()
+        if not path.is_absolute():
+            raise ValueError("Attachment paths must be absolute local paths.")
+        path = path.resolve()
+        if not path.is_file() or not os.access(path, os.R_OK):
+            raise ValueError(f"Attachment is not a readable regular file: {self.path}")
+        file = {"@type": "inputFileLocal", "path": str(path)}
+        result = {"caption": {"@type": "formattedText", "text": caption, "entities": []}}
+        if self.type == "file":
+            return {
+                **result,
+                "@type": "inputMessageDocument",
+                "document": {
+                    "@type": "inputDocument",
+                    "document": file,
+                    "disable_content_type_detection": True,
+                },
+            }
+        if self.type == "photo":
+            return {
+                **result,
+                "@type": "inputMessagePhoto",
+                "photo": {
+                    "@type": "inputPhoto",
+                    "photo": file,
+                    "width": self.width,
+                    "height": self.height,
+                    "added_sticker_file_ids": [],
+                },
+            }
+        return {
+            **result,
+            "@type": "inputMessageVideo",
+            "video": {
+                "@type": "inputVideo",
+                "video": file,
+                "width": self.width,
+                "height": self.height,
+                "duration": self.duration,
+                "supports_streaming": True,
+                "added_sticker_file_ids": [],
+            },
+        }
 
 
 def clean(value: Any) -> Any:
@@ -96,7 +155,8 @@ class Telegram:
 
     def status(self) -> dict:
         return {
-            "read_only": True,
+            "read_only": False,
+            "sending_requires_confirmation": True,
             "authorized": self.client.ready,
             "authorization_state": self.client.authorization_state["@type"],
             "login_url": getattr(self.client, "login_url", None),
@@ -104,6 +164,88 @@ class Telegram:
 
     async def get_me(self) -> dict:
         return clean(await self._read("getMe"))
+
+    async def send_message(
+        self,
+        chat_id: int,
+        text: str = "",
+        attachments: list[Attachment] | None = None,
+        *,
+        confirmed: bool = False,
+        forum_topic_id: int | None = None,
+        reply_to_message_id: int | None = None,
+    ) -> dict:
+        if confirmed is not True:
+            raise ValueError("Explicit user confirmation is required before sending a message.")
+        attachments = attachments or []
+        if not text.strip() and not attachments:
+            raise ValueError("Provide message text or at least one attachment.")
+        if len(text) > (1024 if attachments else 4096):
+            raise ValueError("Text exceeds 1024 caption characters or 4096 text-only characters.")
+        if len(attachments) > 10:
+            raise ValueError("At most 10 attachments can be sent at once.")
+        if any(a.type == "file" for a in attachments) and any(
+            a.type != "file" for a in attachments
+        ):
+            raise ValueError(
+                "Send files separately from photo/video albums; Telegram cannot mix them."
+            )
+        if forum_topic_id is not None and not 1 <= forum_topic_id < 2**31:
+            raise ValueError("forum_topic_id must be a positive 32-bit topic ID.")
+        if reply_to_message_id is not None and reply_to_message_id <= 0:
+            raise ValueError("reply_to_message_id must be positive.")
+        # Validate every file before starting authentication or submitting anything.
+        contents = [a.content(text if i == 0 else "") for i, a in enumerate(attachments)]
+        if not contents:
+            contents = [
+                {
+                    "@type": "inputMessageText",
+                    "text": {"@type": "formattedText", "text": text, "entities": []},
+                    "clear_draft": False,
+                }
+            ]
+        parameters = {
+            "chat_id": chat_id,
+            "topic_id": {"@type": "messageTopicForum", "forum_topic_id": forum_topic_id}
+            if forum_topic_id is not None
+            else None,
+            "reply_to": {"@type": "inputMessageReplyToMessage", "message_id": reply_to_message_id}
+            if reply_to_message_id is not None
+            else None,
+            "options": {"@type": "messageSendOptions", "paid_message_star_count": 0},
+        }
+        album = len(contents) > 1
+        method = "sendMessageAlbum" if album else "sendMessage"
+        parameters["input_message_contents" if album else "input_message_content"] = (
+            contents if album else contents[0]
+        )
+        try:
+            result = await self.client.request(method, **parameters)
+        except TDLibError:
+            raise
+        except RuntimeError as exc:
+            raise RuntimeError(
+                f"Send outcome is unknown: {exc} "
+                "Do not retry automatically; check chat history first."
+            ) from None
+        messages = result.get("messages", []) if album else [result]
+        if not messages or any(
+            not isinstance(m, dict) or m.get("@type") != "message" for m in messages
+        ):
+            raise RuntimeError("Unexpected send response. Check chat history before retrying.")
+        states = {
+            m.get("sending_state", {}).get("@type") for m in messages if m.get("sending_state")
+        }
+        status = (
+            "failed" if "messageSendingStateFailed" in states else "pending" if states else "sent"
+        )
+        if len(messages) != len(contents):
+            status = "partial"
+        return {
+            "status": status,
+            "messages": [message_view(m) for m in messages],
+            "automatic_retry_safe": False,
+        }
 
     async def get_user(self, user_id: int) -> dict:
         return clean(await self._read("getUser", user_id=user_id))

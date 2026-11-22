@@ -12,6 +12,7 @@ from .fakes import FakeBrowser, FakeTDLib, message
 TOOL_NAMES = {
     "telegram_status",
     "logout",
+    "send_message",
     "get_me",
     "get_user",
     "get_chat",
@@ -36,17 +37,17 @@ async def test_real_mcp_client_lists_read_tools_and_logout_and_validates_limits(
         result = await client.list_tools()
         assert {t.name for t in result.tools} == TOOL_NAMES
         for tool in result.tools:
-            assert tool.annotations.read_only_hint == (tool.name != "logout")
-            assert tool.annotations.destructive_hint == (tool.name == "logout")
+            assert tool.annotations.read_only_hint == (tool.name not in {"logout", "send_message"})
+            assert tool.annotations.destructive_hint == (tool.name in {"logout", "send_message"})
             assert "ctx" not in tool.input_schema.get("properties", {})
         status = await client.call_tool("telegram_status")
-        assert status.structured_content["read_only"] is True
+        assert status.structured_content["read_only"] is False
         me = await client.call_tool("get_me")
         assert me.structured_content["id"] == 7
         for limit in (0, 101):
             invalid = await client.call_tool("get_history", {"chat_id": 42, "limit": limit})
             assert invalid.is_error
-        unknown = await client.call_tool("send_message", {"chat_id": 42, "text": "hi"})
+        unknown = await client.call_tool("edit_message", {"chat_id": 42, "text": "hi"})
         assert unknown.is_error
         removed = await client.call_tool("telegram_login_qr")
         assert removed.is_error
@@ -105,7 +106,7 @@ async def test_unauthorized_server_is_inspectable_but_reads_require_login(config
         FakeBrowser,
     )
     async with Client(server) as client:
-        assert len((await client.list_tools()).tools) == 12
+        assert len((await client.list_tools()).tools) == 13
         status = await client.call_tool("telegram_status")
         assert status.structured_content["authorized"] is False
         result = await client.call_tool("get_me")

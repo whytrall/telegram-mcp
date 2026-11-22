@@ -1,6 +1,6 @@
 # Telegram MCP
 
-A read-only MCP server for Telegram based on TDLib
+An MCP server for Telegram based on TDLib, with read tools and confirmed message sending
 
 Important note: you should be careful when using third-party Telegram clients, 
 including this one. Check the source code before signing in, or, in current realities, 
@@ -24,15 +24,25 @@ Install MCP server from https://github.com/whytrall/telegram-mcp
 
 ## Tools
 
-Account data tools carry MCP read-only annotations and use an explicit allowlist
+Read tools carry MCP read-only annotations and use an explicit allowlist
 of TDLib methods. They automatically start browser authentication if needed.
 The `logout` tool changes authentication state and is annotated accordingly.
+`send_message` sends text, photos, videos, and files. **Do not use it without explicit
+user confirmation** of the recipient, content, and attachments; it requires `confirmed=true`.
+Attachments use an absolute local `path` and `type` (`photo`, `video`, or `file`).
+Up to 10 photos/videos or 10 files can be grouped; files and photos/videos cannot mix.
+Text is the first attachment's caption, or a standalone message when no attachments are given.
+Videos must already be MP4/H.264. A `pending` result means upload/delivery is still
+in progress. Check message history before retrying an uncertain send to avoid duplicates.
+Pending sends keep the backend alive until TDLib reports success or failure, so idle
+shutdown does not interrupt an upload.
 There is no raw TDLib request tool.
 
 | Tool | Purpose |
 | --- | --- |
 | `telegram_status` | Check whether the saved session is authorized |
 | `logout` | Revoke the shared Telegram session and clear TDLib's local account cache |
+| `send_message` | Send confirmed text, photos, videos, or files; supports topics and replies |
 | `get_me` | Current user's profile |
 | `get_user` | Profile for a message sender's user ID |
 | `list_chats` | First main/archive chats with unread counts and last messages |

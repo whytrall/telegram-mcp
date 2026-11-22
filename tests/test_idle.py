@@ -85,6 +85,34 @@ async def test_idle_timer_starts_without_clients_and_zero_disables_it(config):
     assert transport.released
 
 
+async def test_pending_upload_prevents_idle_shutdown_after_send_returns(config):
+    transport = FakeTDLib()
+    transport.responses["sendMessage"] = {
+        "@type": "message",
+        "id": 100,
+        "chat_id": 42,
+        "sending_state": {"@type": "messageSendingStatePending", "sending_id": 0},
+    }
+    async with running_backend(config, transport, 0.05) as (endpoint, shutdown):
+        async with Client(backend_transport(endpoint, 10)) as client:
+            result = await client.call_tool(
+                "send_message", {"chat_id": 42, "text": "Hi", "confirmed": True}
+            )
+            assert result.structured_content["status"] == "pending"
+            await asyncio.sleep(0.15)
+            assert not shutdown.is_set()
+            transport.emit(
+                {
+                    "@type": "updateMessageSendSucceeded",
+                    "old_message_id": 100,
+                    "message": {"@type": "message", "id": 200, "chat_id": 42},
+                }
+            )
+            async with asyncio.timeout(2):
+                await shutdown.wait()
+    assert transport.released
+
+
 async def test_existing_stdio_connection_restarts_backend_after_idle_shutdown(tmp_path):
     config = Config(data_dir=tmp_path / "idle-session")
     params = StdioServerParameters(
@@ -99,7 +127,7 @@ async def test_existing_stdio_connection_restarts_backend_after_idle_shutdown(tm
     )
     try:
         async with Client(params, read_timeout_seconds=45) as client:
-            assert len((await client.list_tools()).tools) == 12
+            assert len((await client.list_tools()).tools) == 13
             await client.call_tool("telegram_status")
             first = read_endpoint(config)
             assert first is not None
@@ -117,6 +145,6 @@ async def test_existing_stdio_connection_restarts_backend_after_idle_shutdown(tm
             await client.call_tool("telegram_status")
             third = read_endpoint(config)
             assert third is not None and third["pid"] != second["pid"]
-            assert len((await client.list_tools()).tools) == 12
+            assert len((await client.list_tools()).tools) == 13
     finally:
         await asyncio.to_thread(stop_backend, config)
