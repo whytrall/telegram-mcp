@@ -13,6 +13,32 @@ at runtime. Other platforms need a compatible TDLib build.
 
 ## Install
 
+For **macOS 13+**, download to `~/.local/trl-telegram-mcp`, install the Python server,
+and register it in **[Claude Code](https://code.claude.com/docs/en/mcp#user-scope)**
+and **[Codex](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)** with one command:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/whytrall/telegram-mcp/refs/heads/master/install.sh | bash
+```
+
+Requires **Python 3.11+**, Git, and curl. The bootstrap clones `master` into
+`~/.local/trl-telegram-mcp`, or updates an existing clean checkout on `master`.
+It uses the authenticated [GitHub CLI](https://cli.github.com/) when available,
+otherwise Git over HTTPS. While this repository is private, the raw script URL
+also requires authentication; the command above works anonymously once it is public.
+The installer creates `.venv` inside the download and sets the
+user-level `telegram` server in `~/.claude.json` and `~/.codex/config.toml`
+(`CODEX_HOME` is respected). It replaces an existing `telegram` entry and keeps
+other servers and settings. Restart Claude Code and Codex afterward; your first
+account read opens the browser login page. No Telegram credentials go in the command.
+
+To update an existing installation, rerun the same command, then stop the shared backend
+with `~/.local/trl-telegram-mcp/.venv/bin/telegram-mcp stop` and restart the clients.
+For custom config locations,
+pass `--claude-config /path/to/claude.json --codex-config /path/to/config.toml` to that script.
+
+For development, clone the repository and install from its root:
+
 ```sh
 python3.13 -m venv .venv
 .venv/bin/python -m pip install -e '.[dev]'

@@ -11,7 +11,8 @@ requires-python = ">=3.11"
 dependencies = ["mcp>=2.3,<3", "anyio>=4.9,<5", "httpx2>=2.10,<3", "starlette>=0.27,<2", "uvicorn>=0.31,<1", "filelock>=3.16,<4", "qrcode>=8,<9", "python-dotenv>=1.1,<2"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8,<10", "pytest-asyncio>=1,<2", "ruff>=0.14,<1"]
+dev = ["pytest>=8,<10", "pytest-asyncio>=1,<2", "ruff>=0.14,<1", "tomlkit>=0.13,<1"]
+install = ["tomlkit>=0.13,<1"]
 
 [project.scripts]
 telegram-mcp = "telegram_mcp.cli:main"
