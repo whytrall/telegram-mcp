@@ -147,16 +147,52 @@ def chat_view(chat: dict) -> dict:
 class Telegram:
     def __init__(self, client: TDLibClient | TelegramSession) -> None:
         self.client = client
+        self.allowed_chat_ids = client.config.allowed_chat_ids
+
+    def _chat_allowed(self, chat_id: int) -> bool:
+        return self.allowed_chat_ids is None or chat_id in self.allowed_chat_ids
+
+    def _require_chat(self, chat_id: int) -> None:
+        if not self._chat_allowed(chat_id):
+            raise ValueError("Access to this chat is not allowed by TELEGRAM_ALLOWED_CHAT_IDS.")
+
+    def _message_view(self, message: dict) -> dict:
+        if self.allowed_chat_ids is not None:
+            self._require_chat(message.get("chat_id"))
+        result = message_view(message)
+        reply = result.get("reply_to") or {}
+        if reply.get("chat_id") and not self._chat_allowed(reply["chat_id"]):
+            result.pop("reply_to", None)
+        return result
+
+    def _chat_view(self, chat: dict) -> dict:
+        self._require_chat(chat["id"])
+        result = chat_view(chat)
+        if chat.get("last_message"):
+            result["last_message"] = self._message_view(chat["last_message"])
+        return result
 
     async def _read(self, method: str, **parameters: Any) -> dict:
         if method not in READ_METHODS:
             raise ValueError("Only the explicitly allowed read operations are supported.")
+        if "chat_id" in parameters:
+            self._require_chat(parameters["chat_id"])
+        if self.allowed_chat_ids is not None and method in {
+            "searchMessages",
+            "getUser",
+            "searchPublicChat",
+        }:
+            raise ValueError(
+                "Chat restrictions block global message search, arbitrary user lookup, "
+                "and username resolution. Use an allowed chat_id instead."
+            )
         return await self.client.request(method, **parameters)
 
     def status(self) -> dict:
         return {
             "read_only": False,
             "sending_requires_confirmation": True,
+            "allowed_chat_ids": self.client.config.chat_allowlist,
             "authorized": self.client.ready,
             "authorization_state": self.client.authorization_state["@type"],
             "login_url": getattr(self.client, "login_url", None),
@@ -177,6 +213,7 @@ class Telegram:
     ) -> dict:
         if confirmed is not True:
             raise ValueError("Explicit user confirmation is required before sending a message.")
+        self._require_chat(chat_id)
         attachments = attachments or []
         if not text.strip() and not attachments:
             raise ValueError("Provide message text or at least one attachment.")
@@ -243,7 +280,7 @@ class Telegram:
             status = "partial"
         return {
             "status": status,
-            "messages": [message_view(m) for m in messages],
+            "messages": [self._message_view(m) for m in messages],
             "automatic_retry_safe": False,
         }
 
@@ -251,7 +288,7 @@ class Telegram:
         return clean(await self._read("getUser", user_id=user_id))
 
     async def get_chat(self, chat_id: int) -> dict:
-        return chat_view(await self._read("getChat", chat_id=chat_id))
+        return self._chat_view(await self._read("getChat", chat_id=chat_id))
 
     async def list_topics(
         self,
@@ -298,9 +335,11 @@ class Telegram:
 
     async def _chats(self, ids: list[int]) -> list[dict]:
         # Keep native request fan-out bounded even for large chat lists.
-        return [await self.get_chat(chat_id) for chat_id in ids]
+        return [await self.get_chat(chat_id) for chat_id in ids if self._chat_allowed(chat_id)]
 
     async def list_chats(self, limit: int = 30, archive: bool = False) -> dict:
+        if self.allowed_chat_ids == frozenset():
+            return {"chats": []}
         chat_list = {"@type": "chatListArchive" if archive else "chatListMain"}
         try:
             await self._read("loadChats", chat_list=chat_list, limit=limit)
@@ -311,6 +350,8 @@ class Telegram:
         return {"chats": await self._chats(result["chat_ids"])}
 
     async def search_chats(self, query: str, limit: int = 30) -> dict:
+        if self.allowed_chat_ids == frozenset():
+            return {"chats": []}
         # Server-backed search also finds account chats not in the local cache.
         result = await self._read("searchChatsOnServer", query=query, limit=limit)
         return {"chats": await self._chats(result["chat_ids"])}
@@ -319,7 +360,7 @@ class Telegram:
         username = username.removeprefix("@").strip()
         if not username or "/" in username:
             raise ValueError("Provide a Telegram username, such as @telegram, rather than a URL.")
-        return chat_view(await self._read("searchPublicChat", username=username))
+        return self._chat_view(await self._read("searchPublicChat", username=username))
 
     async def get_history(
         self,
@@ -346,17 +387,20 @@ class Telegram:
         messages = [
             item
             for item in result.get("messages", [])
-            if not before_message_id or item["id"] < before_message_id
+            if self._chat_allowed(item.get("chat_id"))
+            and (not before_message_id or item["id"] < before_message_id)
         ]
         return {
-            "messages": [message_view(item) for item in messages],
+            "messages": [self._message_view(item) for item in messages],
             # Short batches do not indicate end-of-history; TDLib may return fewer
             # messages while it fills its local database.
             "next_before_message_id": messages[-1]["id"] if messages else None,
         }
 
     async def get_message(self, chat_id: int, message_id: int) -> dict:
-        return message_view(await self._read("getMessage", chat_id=chat_id, message_id=message_id))
+        return self._message_view(
+            await self._read("getMessage", chat_id=chat_id, message_id=message_id)
+        )
 
     async def search_messages(
         self,
@@ -377,7 +421,11 @@ class Telegram:
             )
             return {
                 "total_count": result["total_count"],
-                "messages": [message_view(item) for item in result["messages"]],
+                "messages": [
+                    self._message_view(item)
+                    for item in result["messages"]
+                    if self._chat_allowed(item.get("chat_id"))
+                ],
                 "next_from_message_id": result.get("next_from_message_id", 0),
             }
         result = await self._read("searchMessages", query=query, offset=offset, limit=limit)

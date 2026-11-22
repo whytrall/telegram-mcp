@@ -5,6 +5,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
+import tomlkit
 
 spec = importlib.util.spec_from_file_location(
     "configure_clients", Path(__file__).parents[1] / "scripts" / "configure_clients.py"
@@ -61,6 +62,30 @@ def test_registration_creates_missing_configurations(files):
     installer.configure(*files)
     assert json.loads(files[1].read_text())["mcpServers"]["telegram"]
     assert tomllib.loads(files[2].read_text())["mcp_servers"]["telegram"]
+
+
+@pytest.mark.parametrize("allowlist", ["42,-1001234567890", ""])
+def test_update_preserves_chat_restrictions_and_env_file_arguments(files, allowlist):
+    _, claude_path, codex_path = files
+    codex_path.parent.mkdir()
+    entry = {
+        "command": "/previous/telegram-mcp",
+        "args": ["--env-file", "/private/server.env", "serve"],
+        "cwd": "/private",
+        "env": {"TELEGRAM_ALLOWED_CHAT_IDS": allowlist},
+        "env_vars": ["TELEGRAM_ALLOWED_CHAT_IDS"],
+    }
+    claude_path.write_text(json.dumps({"mcpServers": {"telegram": entry}}))
+    codex_path.write_text(tomlkit.dumps({"mcp_servers": {"telegram": entry}}))
+    installer.configure(*files)
+    claude = json.loads(claude_path.read_text())["mcpServers"]["telegram"]
+    codex = tomllib.loads(codex_path.read_text())["mcp_servers"]["telegram"]
+    for updated in (claude, codex):
+        assert updated["env"] == entry["env"]
+        assert updated["env_vars"] == entry["env_vars"]
+        assert updated["args"] == entry["args"]
+        assert updated["cwd"] == entry["cwd"]
+        assert updated["command"] != entry["command"]
 
 
 @pytest.mark.parametrize(

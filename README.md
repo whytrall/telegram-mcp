@@ -36,6 +36,27 @@ Videos must already be MP4/H.264. A `pending` result means upload/delivery is st
 in progress. Check message history before retrying an uncertain send to avoid duplicates.
 Pending sends keep the backend alive until TDLib reports success or failure, so idle
 shutdown does not interrupt an upload.
+
+Restrict both reading and sending to specific chats by setting this in the MCP
+server's environment (or its explicit `--env-file`):
+
+```sh
+TELEGRAM_ALLOWED_CHAT_IDS=42,-1001234567890
+```
+
+Use the numeric TDLib IDs returned by `list_chats` or `get_chat`. Unset means all
+chats; an explicitly empty value blocks all chats. Invalid values stop startup.
+Direct reads, topics, replies, and sends reject other chats; chat listings/search
+results include only allowed chats. Message search must specify an allowed
+`chat_id`; global message search, username resolution, and arbitrary `get_user`
+lookups are disabled while restrictions are configured. Account identity, status,
+and logout remain available. `telegram_status` reports the effective allowlist.
+
+All clients sharing `TELEGRAM_DATA_DIR` must use the same allowlist. After changing
+it, stop the shared backend and restart the MCP connections; a mismatched client
+is rejected instead of reusing a backend with different permissions. Reinstalling
+preserves existing server environment settings and `--env-file` arguments.
+The restriction controls MCP access, while TDLib still synchronizes the account locally.
 There is no raw TDLib request tool.
 
 | Tool | Purpose |

@@ -161,6 +161,7 @@ def main() -> None:
                         ).exists(),
                         "read_only": False,
                         "sending_requires_confirmation": True,
+                        "allowed_chat_ids": config.chat_allowlist,
                     },
                     indent=2,
                 )

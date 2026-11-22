@@ -4,6 +4,7 @@ import base64
 import json
 import math
 import os
+import re
 import sys
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -29,6 +30,7 @@ class Config:
     request_timeout: float = 30.0
     login_timeout: float = 300.0
     idle_timeout: float = 300.0
+    allowed_chat_ids: frozenset[int] | None = None
 
     def __post_init__(self) -> None:
         if not 0 <= self.api_id < 2**31:
@@ -39,6 +41,29 @@ class Config:
             raise ValueError("TELEGRAM_LOGIN_TIMEOUT must be a finite positive number.")
         if not math.isfinite(self.idle_timeout) or self.idle_timeout < 0:
             raise ValueError("TELEGRAM_IDLE_TIMEOUT must be a finite nonnegative number.")
+        if self.allowed_chat_ids is not None and (
+            not isinstance(self.allowed_chat_ids, frozenset)
+            or any(
+                type(chat_id) is not int or not 0 < abs(chat_id) < 2**53
+                for chat_id in self.allowed_chat_ids
+            )
+        ):
+            raise ValueError("TELEGRAM_ALLOWED_CHAT_IDS must contain nonzero TDLib chat IDs.")
+
+    @staticmethod
+    def parse_allowed_chat_ids(value: str | None) -> frozenset[int] | None:
+        if value is None:
+            return None
+        if not value.strip():
+            return frozenset()
+        parts = [part.strip() for part in value.split(",")]
+        if any(not re.fullmatch(r"-?[0-9]+", part) for part in parts):
+            raise ValueError("TELEGRAM_ALLOWED_CHAT_IDS must be comma-separated numeric chat IDs.")
+        return frozenset(int(part) for part in parts)
+
+    @property
+    def chat_allowlist(self) -> list[int] | None:
+        return None if self.allowed_chat_ids is None else sorted(self.allowed_chat_ids)
 
     @property
     def has_credentials(self) -> bool:
@@ -104,6 +129,9 @@ class Config:
             request_timeout=timeout,
             login_timeout=login_timeout,
             idle_timeout=idle_timeout,
+            allowed_chat_ids=cls.parse_allowed_chat_ids(
+                os.environ.get("TELEGRAM_ALLOWED_CHAT_IDS")
+            ),
         )
 
     def prepare_directories(self) -> None:

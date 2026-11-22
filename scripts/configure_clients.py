@@ -6,9 +6,33 @@ import argparse
 import json
 import os
 import tempfile
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import tomlkit
+
+
+def preserved_settings(previous) -> dict:
+    """Updates must never silently remove environment-based chat restrictions."""
+    if not isinstance(previous, Mapping):
+        return {}
+    result = {}
+    for key in ("env_vars", "cwd"):
+        if key in previous:
+            result[key] = previous[key]
+    if "env" in previous:
+        env = previous["env"]
+        if not isinstance(env, Mapping) or any(not isinstance(v, str) for v in env.values()):
+            raise ValueError("The existing telegram environment must contain string values.")
+        result["env"] = dict(env)
+    args = previous.get("args", [])
+    if isinstance(args, Sequence) and not isinstance(args, (str, bytes)):
+        if any(
+            isinstance(arg, str) and (arg == "--env-file" or arg.startswith("--env-file="))
+            for arg in args
+        ):
+            result["args"] = list(args)
+    return result
 
 
 def write_config(path: Path, content: str) -> None:
@@ -31,9 +55,14 @@ def configure(launcher: Path, claude_path: Path, codex_path: Path) -> None:
         raise ValueError(f"Expected a JSON object with an mcpServers object in {claude_path}")
     codex = tomlkit.parse(codex_path.read_text()) if codex_path.exists() else tomlkit.document()
     command = {"command": str(launcher), "args": ["serve"]}
-    claude.setdefault("mcpServers", {})["telegram"] = {"type": "stdio", **command}
-    codex.setdefault("mcp_servers", {})["telegram"] = {
+    claude_servers = claude.setdefault("mcpServers", {})
+    codex_servers = codex.setdefault("mcp_servers", {})
+    claude_settings = preserved_settings(claude_servers.get("telegram"))
+    codex_settings = preserved_settings(codex_servers.get("telegram"))
+    claude_servers["telegram"] = {"type": "stdio", **command, **claude_settings}
+    codex_servers["telegram"] = {
         **command,
+        **codex_settings,
         "startup_timeout_sec": 45,
         "tool_timeout_sec": 360,
     }

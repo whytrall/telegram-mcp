@@ -91,6 +91,7 @@ def ensure_backend(config: Config) -> dict:
         endpoint = read_endpoint(config)
         status = backend_status(endpoint)
         if status is not None and not status.get("closing", False):
+            require_matching_policy(config, status)
             return endpoint
         wait_for_backend_close(config, endpoint)
         environment = os.environ.copy()
@@ -107,6 +108,10 @@ def ensure_backend(config: Config) -> dict:
         )
         if config.library_path:
             environment["TDLIB_LIBRARY_PATH"] = config.library_path
+        if config.allowed_chat_ids is None:
+            environment.pop("TELEGRAM_ALLOWED_CHAT_IDS", None)
+        else:
+            environment["TELEGRAM_ALLOWED_CHAT_IDS"] = ",".join(map(str, config.chat_allowlist))
         log_path = config.data_dir / "backend.log"
         fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
         with os.fdopen(fd, "ab") as log:
@@ -124,7 +129,9 @@ def ensure_backend(config: Config) -> dict:
         deadline = time.monotonic() + 40
         while time.monotonic() < deadline:
             endpoint = read_endpoint(config)
-            if is_running(endpoint):
+            status = backend_status(endpoint)
+            if status is not None:
+                require_matching_policy(config, status)
                 return endpoint
             if process.poll() is not None:
                 raise RuntimeError(f"Telegram backend could not start. See {log_path}.")
@@ -133,6 +140,15 @@ def ensure_backend(config: Config) -> dict:
         process.terminate()
         process.wait(timeout=5)
         raise RuntimeError(f"Telegram backend startup timed out. See {log_path}.")
+
+
+def require_matching_policy(config: Config, status: dict) -> None:
+    if status.get("allowed_chat_ids") != config.chat_allowlist:
+        raise RuntimeError(
+            "The shared Telegram backend uses a different chat allowlist. "
+            "Stop it with telegram-mcp stop, configure the same TELEGRAM_ALLOWED_CHAT_IDS "
+            "for all clients sharing this data directory, then restart their MCP connections."
+        )
 
 
 def stop_backend(config: Config) -> bool:
@@ -241,7 +257,14 @@ def backend_app(server, token: str, shutdown, *, idle_timeout: float = 300):
     @server.custom_route("/health", methods=["GET"])
     async def health(request):
         return JSONResponse(
-            {"service": "telegram-mcp", "pid": os.getpid(), "closing": idle.stopping}
+            {
+                "service": "telegram-mcp",
+                "pid": os.getpid(),
+                "closing": idle.stopping,
+                "allowed_chat_ids": None
+                if server.allowed_chat_ids is None
+                else sorted(server.allowed_chat_ids),
+            }
         )
 
     @server.custom_route("/shutdown", methods=["POST"])
