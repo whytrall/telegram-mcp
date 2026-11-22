@@ -159,7 +159,13 @@ Configuration format is client-specific; the process/args/env values above are t
 same for any stdio client. Each stdio process forwards to a shared MCP backend on
 `127.0.0.1`, authenticated by a random token stored with owner-only permissions.
 The backend starts automatically, owns the single TDLib database connection, and
-stays running when individual chats disconnect. Browser login uses a separate local page.
+stays available when individual chats disconnect. After **5 minutes without MCP
+requests**, it shuts down gracefully, closes TDLib, and preserves your login.
+Set `TELEGRAM_IDLE_TIMEOUT` in seconds to change this duration; `0` disables idle
+shutdown. Active requests, including browser login, finish before the idle countdown
+starts. Health checks and open event streams do not keep the backend alive.
+The lightweight stdio proxies reconnect and restart it automatically on the next
+request, including requests from an already-open chat. Browser login uses a separate local page.
 Use `telegram-mcp stop` to stop the backend gracefully. After updating server code,
 stop the backend and restart the MCP connection in Codex to load the changes.
 

@@ -28,6 +28,7 @@ class Config:
     database_key: str = field(default="", repr=False)
     request_timeout: float = 30.0
     login_timeout: float = 300.0
+    idle_timeout: float = 300.0
 
     def __post_init__(self) -> None:
         if not 0 <= self.api_id < 2**31:
@@ -36,6 +37,8 @@ class Config:
             raise ValueError("TELEGRAM_REQUEST_TIMEOUT must be a finite positive number.")
         if not math.isfinite(self.login_timeout) or self.login_timeout <= 0:
             raise ValueError("TELEGRAM_LOGIN_TIMEOUT must be a finite positive number.")
+        if not math.isfinite(self.idle_timeout) or self.idle_timeout < 0:
+            raise ValueError("TELEGRAM_IDLE_TIMEOUT must be a finite nonnegative number.")
 
     @property
     def has_credentials(self) -> bool:
@@ -86,6 +89,10 @@ class Config:
             login_timeout = float(os.environ.get("TELEGRAM_LOGIN_TIMEOUT", "300"))
         except ValueError:
             raise ValueError("TELEGRAM_LOGIN_TIMEOUT must be a number.") from None
+        try:
+            idle_timeout = float(os.environ.get("TELEGRAM_IDLE_TIMEOUT", "300"))
+        except ValueError:
+            raise ValueError("TELEGRAM_IDLE_TIMEOUT must be a number.") from None
         return cls(
             api_id=api_id,
             api_hash=os.environ.get("TELEGRAM_API_HASH", ""),
@@ -96,6 +103,7 @@ class Config:
             database_key=os.environ.get("TELEGRAM_DATABASE_KEY", ""),
             request_timeout=timeout,
             login_timeout=login_timeout,
+            idle_timeout=idle_timeout,
         )
 
     def prepare_directories(self) -> None:

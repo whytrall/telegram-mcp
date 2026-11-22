@@ -17,6 +17,18 @@ def test_secret_configuration_not_in_repr(config):
     assert config.api_hash not in repr(config)
 
 
+@pytest.mark.parametrize("value", ["nan", "inf", "-inf", "-1", "nope"])
+def test_invalid_idle_timeout(monkeypatch, value):
+    monkeypatch.setenv("TELEGRAM_IDLE_TIMEOUT", value)
+    with pytest.raises(ValueError, match="TELEGRAM_IDLE_TIMEOUT"):
+        Config.from_env()
+
+
+def test_idle_timeout_can_be_disabled(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_IDLE_TIMEOUT", "0")
+    assert Config.from_env().idle_timeout == 0
+
+
 def test_transport_metadata_and_inline_images_removed():
     assert clean(
         {"@extra": "secret", "content": {"minithumbnail": {"data": "large"}, "text": "hi"}}
