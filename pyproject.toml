@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "telegram-tdlib-mcp"
+version = "0.1.0"
+description = "A local Telegram MCP server using TDLib's native JSON interface"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["mcp>=2.3,<3", "anyio>=4.9,<5", "httpx2>=2.10,<3", "starlette>=0.27,<2", "uvicorn>=0.31,<1", "filelock>=3.16,<4", "qrcode>=8,<9", "python-dotenv>=1.1,<2"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "pytest-asyncio>=1,<2", "ruff>=0.14,<1"]
+
+[project.scripts]
+telegram-mcp = "telegram_mcp.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/telegram_mcp"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = [".deps"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]

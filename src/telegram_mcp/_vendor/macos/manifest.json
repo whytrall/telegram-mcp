@@ -1,0 +1,11 @@
+{
+  "tdlib_commit": "03220f6b3043c6fd7785fbf0901d63f19ad19974",
+  "openssl_version": "3.5.9",
+  "minimum_macos": "13.0",
+  "architectures": [
+    "x86_64",
+    "arm64"
+  ],
+  "sha256": "4481d2402970fc590583f8bcab6627b2990e930ae9ce52829cd1fe2850b7ef50",
+  "build_command": "bash scripts/prebuild_tdlib_macos.sh"
+}

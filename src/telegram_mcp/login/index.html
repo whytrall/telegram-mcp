@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Telegram login</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <svg class="symbols" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <symbol id="arrow" viewBox="0 0 24 24">
+        <path d="M5 12h14m-6-6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </symbol>
+    </defs>
+  </svg>
+  <main class="page">
+    <section class="auth" aria-labelledby="login-title">
+      <h1 id="login-title">Connect Telegram</h1>
+      <p id="status" role="status">Preparing login…</p>
+      <div id="login-card" class="card">
+        <form id="credentials" hidden>
+          <div class="field">
+            <input id="app-id" name="app_id" type="text" inputmode="numeric" pattern="[0-9]+" autocomplete="off" placeholder=" " required>
+            <label for="app-id">App ID</label>
+          </div>
+          <div class="field">
+            <input id="app-hash" name="app_hash" type="password" autocomplete="off" placeholder=" " required>
+            <label for="app-hash">App hash</label>
+          </div>
+          <p class="hint">Find these in your <a href="https://my.telegram.org/apps" target="_blank" rel="noreferrer">Telegram API settings</a>.</p>
+          <button class="btn primary block">Show QR code<svg aria-hidden="true"><use href="#arrow"/></svg></button>
+          <p class="note">Saved on this computer for future connections.</p>
+        </form>
+        <section id="qr-section" hidden>
+          <img id="qr" alt="Telegram login QR code" width="280" height="280">
+          <p>In Telegram on your phone, open<br><strong>Settings → Devices → Link Desktop Device</strong><br>and scan this code.</p>
+          <p class="note">The code refreshes automatically.</p>
+        </section>
+        <form id="verification" hidden>
+          <div class="field">
+            <input id="value" name="value" type="password" placeholder=" " required>
+            <label id="verification-label" for="value">Password</label>
+          </div>
+          <button class="btn primary block">Continue<svg aria-hidden="true"><use href="#arrow"/></svg></button>
+        </form>
+        <section id="recovery" hidden>
+          <button id="retry" type="button" class="btn primary block">Try again</button>
+          <button id="change-credentials" type="button" class="btn secondary block">Change app credentials</button>
+        </section>
+        <p id="error" role="alert"></p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
